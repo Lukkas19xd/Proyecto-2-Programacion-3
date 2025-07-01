@@ -1,7 +1,7 @@
 # api/controllers/client_routes.py
 from fastapi import APIRouter, Depends, HTTPException
 from sim.simulation import Simulation
-from ..dependencias import get_simulation
+from ..depedencies import get_simulation
 
 # El router es como un "mini-FastAPI" que podemos incluir en la aplicación principal.
 router = APIRouter(

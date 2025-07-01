@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sim.simulation import Simulation
 from sim.pathfinder import Pathfinder
-from ..dependencias import get_simulation
+from ..depedencies import get_simulation
 
 router = APIRouter(
     prefix="/orders",

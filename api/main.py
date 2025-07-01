@@ -1,14 +1,16 @@
 # api/main.py
+# api/main.py
+# api/main.py
 import random
 from fastapi import FastAPI, Depends
 from sim.simulation import Simulation
 from domain.client import Client
 from domain.order import Order
-from .dependencias import get_simulation
+from .depedencies import get_simulation
 
-# --- Importamos los routers que hemos creado ---
-from .controllers import client_routes, order_routes
-# from .controllers import report_routes, info_routes # (Estos los haremos después)
+# --- Importamos todos los routers ---
+from .controllers import client_routes, order_routes, report_routes
+# from .controllers import info_routes # (Este es el último que falta)
 
 # Inicializa la aplicación FastAPI
 app = FastAPI(
@@ -17,27 +19,22 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# --- Incluimos los routers en la aplicación principal ---
+# --- Incluimos todos los routers ---
 app.include_router(client_routes.router)
 app.include_router(order_routes.router)
-# app.include_router(report_routes.router) # (Estos los haremos después)
-# app.include_router(info_routes.router)
+app.include_router(report_routes.router)
+# app.include_router(info_routes.router) # (Este es el último que falta)
 
 
 @app.get("/", tags=["Root"])
 def read_root():
-    """
-    Endpoint principal que da la bienvenida a la API.
-    """
+    # ... (el resto del código se mantiene igual) ...
     return {"message": "Bienvenido a la API del Sistema Logístico de Drones"}
 
 @app.post("/simulation/run", tags=["Simulation"])
 def run_simulation(n_nodes: int = 15, m_edges: int = 20, n_orders: int = 10, sim: Simulation = Depends(get_simulation)):
-    """
-    Inicia o reinicia la simulación con nuevos parámetros.
-    Este endpoint simula el botón "Iniciar Simulación" del dashboard.
-    """
-    sim.__init__()  # Resetea la simulación
+    # ... (el resto del código se mantiene igual) ...
+    sim.__init__()
     sim.graph = sim.initializer.generate_graph(n_nodes, m_edges)
     
     client_nodes = [v for v in sim.graph.vertices.values() if v.role == "client"]
