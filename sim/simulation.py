@@ -136,3 +136,71 @@ class Simulation:
             ax2.text(0.5, 0.5, "Sin entregas completadas", ha='center')
 
         st.pyplot(fig)
+
+# En el archivo: sim/simulation.py
+# Agrégalo dentro de la clase Simulation
+
+def find_path_with_recharge(self, start_node_id, end_node_id):
+    """
+    Calcula una ruta entre un nodo de inicio y fin, considerando la autonomía del dron.
+    Si la ruta directa excede la autonomía, busca una ruta a través de una estación de recarga.
+    
+    Args:
+        start_node_id (str): ID del nodo de origen (Almacenamiento).
+        end_node_id (str): ID del nodo de destino (Cliente).
+
+    Returns:
+        tuple: (lista_de_nodos, costo_total, tipo_de_ruta)
+               El tipo puede ser "Directa", "Con Recarga" o "No viable".
+    """
+    MAX_AUTONOMY = 50  # Autonomía máxima del dron [cite: 36]
+
+    # 1. Calcular la ruta directa usando Dijkstra
+    # Asumimos que tu método dijkstra devuelve la ruta (lista de IDs) y el costo
+    direct_path, direct_cost = self.graph.dijkstra(start_node_id, end_node_id)
+
+    # 2. Verificar si la ruta directa es válida
+    if direct_path and direct_cost <= MAX_AUTONOMY:
+        print(f"Ruta directa encontrada de {start_node_id} a {end_node_id}. Costo: {direct_cost}")
+        return direct_path, direct_cost, "Directa"
+
+    print(f"Ruta directa excede la autonomía ({direct_cost}). Buscando alternativa con recarga...")
+
+    # 3. Si no es válida, buscar la mejor estación de recarga
+    best_recharge_path = []
+    lowest_total_cost = float('inf')
+    
+    # Obtener todos los nodos de recarga del grafo
+    recharge_nodes = [
+        v_id for v_id, vertex in self.graph.vertices.items() if vertex.role == 'Recarga'
+    ]
+
+    if not recharge_nodes:
+        print("Advertencia: No hay nodos de recarga en el grafo.")
+        return None, float('inf'), "No viable"
+
+    for recharge_node_id in recharge_nodes:
+        # Calcular Ruta: Origen -> Estación de Recarga
+        path_to_recharge, cost_to_recharge = self.graph.dijkstra(start_node_id, recharge_node_id)
+        
+        # Si hay una ruta válida a la estación de recarga
+        if path_to_recharge and cost_to_recharge <= MAX_AUTONOMY:
+            # Calcular Ruta: Estación de Recarga -> Destino
+            path_from_recharge, cost_from_recharge = self.graph.dijkstra(recharge_node_id, end_node_id)
+
+            # Si hay una ruta válida desde la estación de recarga y no excede la autonomía
+            if path_from_recharge and cost_from_recharge <= MAX_AUTONOMY:
+                total_cost_with_recharge = cost_to_recharge + cost_from_recharge
+                
+                # Si esta ruta combinada es mejor que la anterior encontrada
+                if total_cost_with_recharge < lowest_total_cost:
+                    lowest_total_cost = total_cost_with_recharge
+                    # Combinamos las rutas, eliminando el nodo de recarga duplicado
+                    best_recharge_path = path_to_recharge + path_from_recharge[1:]
+    
+    if not best_recharge_path:
+        print(f"No se encontró una ruta viable de {start_node_id} a {end_node_id} que cumpla con la autonomía.")
+        return None, float('inf'), "No viable"
+
+    print(f"Ruta con recarga encontrada. Costo total: {lowest_total_cost}")
+    return best_recharge_path, lowest_total_cost, "Con Recarga"
