@@ -1,155 +1,127 @@
-# visual/dashboard.py
-
 import streamlit as st
-import pandas as pd
-import requests
 import matplotlib.pyplot as plt
-from visual.map.map_builder import MapBuilder
+from collections import Counter
+import time
+
+# --- Importaciones de Módulos del Proyecto ---
+from sim.simulation import Simulation
+from visual.map.map_builder import MapBuilder # Importamos la CLASE
+from streamlit_folium import st_folium
 from visual.avl_visualizer import AVLVisualizer
 from visual.report_generator import generate_pdf_report
-from sim.simulation import Simulation
+from sim.mst_finder import MSTFinder
+from sim.pathfinder import Pathfinder
 
-# --- Funciones para cada pestaña, replicando el video ---
+def main_dashboard(sim: Simulation):
+    """
+    Función principal que construye y ejecuta el dashboard de Streamlit.
+    Ahora acepta la instancia de la simulación como argumento.
+    """
+    st.title("📦 Sistema Logístico Autónomo con Drones")
+    
+    tabs = st.tabs(["🔄 Simulación", "🌍 Explorar Red", "👤 Clientes y Órdenes", "📊 Analítica de Rutas", "📈 Estadísticas Generales"])
 
-def show_run_simulation(simulation: Simulation):
-    st.header("1. Configure Simulation Parameters")
-    with st.container(border=True):
-        n_nodes = st.slider("Number of Nodes", 10, 150, st.session_state.get('n_nodes', 15))
-        min_edges = n_nodes - 1
-        m_edges = st.slider("Number of Edges", min_edges, 300, max(min_edges, st.session_state.get('m_edges', 20)))
-        n_orders = st.slider("Number of Orders", 10, 300, st.session_state.get('n_orders', 10))
+    # --- Pestaña 1: Simulación ---
+    with tabs[0]:
+        st.header("🔧 Configuración de la Simulación")
+        n_nodes = st.slider("Número de Nodos", 10, 150, 15, key="nodes_slider_main")
+        m_edges = st.slider("Número de Aristas", n_nodes - 1, 300, 20, key="edges_slider_main")
+        n_orders = st.slider("Órdenes Iniciales", 1, 100, 10, key="orders_slider_main")
 
-        st.session_state.update(n_nodes=n_nodes, m_edges=m_edges, n_orders=n_orders)
-
-        if st.button("🚀 Start Simulation", use_container_width=True):
-            with st.spinner('Generating network...'):
-                simulation.start_new_simulation(n_nodes, m_edges, n_orders)
+        if st.button("🚀 Iniciar/Reiniciar Simulación"):
+            with st.spinner('Generando nueva simulación...'):
+                # Usamos el método de setup para re-inicializar la instancia 'sim'
+                sim._setup_simulation(n_nodes, m_edges, n_orders)
+            st.success("¡Simulación generada!")
             st.rerun()
 
-def show_explore_network(simulation: Simulation):
-    st.header("2. Explore Network")
-    if not simulation.graph:
-        st.warning("Please start a simulation first.")
-        return
+    # --- Pestaña 2: Explorar Red ---
+    with tabs[1]:
+        st.header("🌍 Visualización y Procesamiento de Rutas")
+        if not sim.graph:
+            st.warning("Primero debe iniciar una simulación.")
+        else:
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.subheader("Mapa de la Red Logística")
+                map_builder = MapBuilder(sim.graph)
+                folium_map = map_builder.build_map(st.session_state.get('path_to_highlight'), st.session_state.get('mst_edges'))
+                st_folium(folium_map, width=725, height=500, key="mapa_principal")
+            
+            with col2:
+                st.subheader("Procesar Órdenes")
+                algorithm = st.radio("Algoritmo:", ('Dijkstra', 'Floyd-Warshall'), key="algo_radio")
+                
+                pending_orders = {f"Orden #{o.order_id[:8]} ({o.origin} -> {o.destination})": o for o in sim.orders if o.status == 'Pending'}
+                if pending_orders:
+                    selected_order_str = st.selectbox("Seleccione Orden:", list(pending_orders.keys()))
+                    if st.button("Buscar Ruta y Completar"):
+                        order = pending_orders[selected_order_str]
+                        sim._process_delivery(order, algorithm.lower())
+                else:
+                    st.success("No hay órdenes pendientes.")
+                
+                st.divider()
+                st.subheader("Análisis de Red")
+                if st.button("Mostrar/Ocultar MST"):
+                    sim._toggle_mst_display()
 
-    with st.container(border=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            origin_nodes = [v.vertex_id for v in simulation.get_nodes_by_role("Warehouses")]
-            selected_origin = st.selectbox("Select Origin (Warehouse)", options=origin_nodes)
-        with col2:
-            destination_nodes = [v.vertex_id for v in simulation.get_nodes_by_role("Clients")]
-            selected_destination = st.selectbox("Select Destination (Client)", options=destination_nodes)
+    # --- Pestaña 3: Clientes y Órdenes ---
+    with tabs[2]:
+        st.header("👤 Clientes y Órdenes")
+        if sim.clients:
+            st.subheader("Clientes Registrados")
+            st.json([c.to_dict() for c in sim.clients.values()])
+            st.subheader("Historial de Órdenes")
+            st.json([o.to_dict() for o in sim.orders])
+        else:
+            st.info("No hay datos que mostrar. Inicie una simulación.")
 
-        algorithm = st.radio("Pathfinding Algorithm", ["Dijkstra", "Floyd-Warshall"], horizontal=True)
-
-        btn_col1, btn_col2, btn_col3 = st.columns(3)
-        with btn_col1:
-            if st.button("Calculate Route", use_container_width=True):
-                path, cost = simulation.find_path(selected_origin, selected_destination, algorithm)
-                st.session_state.update(calculated_path=path, path_cost=cost, show_mst=False)
-                st.rerun()
-        with btn_col2:
-            if st.button("Complete & Create Order", use_container_width=True, disabled=not st.session_state.get('calculated_path')):
-                simulation.create_order_from_route(selected_origin, selected_destination, st.session_state.calculated_path, st.session_state.path_cost)
-                st.success(f"Order created for route {selected_origin} -> {selected_destination}")
-                st.session_state.calculated_path = None
-                st.rerun()
-        with btn_col3:
-            if st.button("Show/Hide MST", use_container_width=True):
-                st.session_state.show_mst = not st.session_state.get('show_mst', False)
-                if st.session_state.show_mst:
-                    st.session_state.mst_edges = simulation.get_mst()
-                st.rerun()
-
-    if st.session_state.get('calculated_path'):
-        st.subheader("Flight Summary")
-        st.info(f"Route: `{' -> '.join(st.session_state.calculated_path)}` | Cost: `{st.session_state.path_cost}`")
-
-    MapBuilder(simulation)
-
-def show_clients_and_orders(simulation: Simulation):
-    st.header("3. Clients & Orders")
-    if not simulation.graph:
-        st.warning("Please start a simulation first.")
-        return
-    
-    st.subheader("Client List")
-    st.json([client.to_dict() for client in simulation.get_all_clients()])
-    
-    st.subheader("Order List")
-    st.json([order.to_dict() for order in simulation.get_all_orders()])
-
-def show_route_analytics(simulation: Simulation):
-    st.header("4. Route Analytics")
-    if not simulation.route_avl or simulation.route_avl.is_empty():
-        st.warning("No routes recorded yet. Complete deliveries to see analytics.")
-        return
-
-    st.subheader("Most Frequent Routes (AVL Tree)")
-    fig = visualize_avl_tree(simulation.route_avl)
-    if fig:
-        st.pyplot(fig)
-
-    st.subheader("Export System Report")
-    if st.button("Generate PDF Report", use_container_width=True):
-        with st.spinner("Generating PDF..."):
-            pdf_data = generate_pdf_report(simulation)
-            st.download_button("Download PDF", pdf_data, "simulation_report.pdf", "application/pdf", use_container_width=True)
-
-def show_general_statistics(simulation: Simulation):
-    st.header("5. General Statistics")
-    if not simulation.graph:
-        st.warning("Please start a simulation first.")
-        return
-
-    st.subheader("Node Distribution by Role")
-    roles = [v.role for v in simulation.graph.get_vertices()]
-    if roles:
-        role_counts = {role: roles.count(role) for role in set(roles)}
-        fig1, ax1 = plt.subplots()
-        ax1.pie(role_counts.values(), labels=role_counts.keys(), autopct='%1.1f%%', startangle=90)
-        ax1.axis('equal')
-        st.pyplot(fig1)
-
-    st.subheader("Most Visited Nodes Comparison")
-    try:
-        API_URL = "http://127.0.0.1:8000"
-        clients_resp = requests.get(f"{API_URL}/info/reports/visits/clients").json()
-        recharges_resp = requests.get(f"{API_URL}/info/reports/visits/recharges").json()
-        storages_resp = requests.get(f"{API_URL}/info/reports/visits/storages").json()
-
-        data = {
-            "Clients": sum(item['visits'] for item in clients_resp),
-            "Recharge": sum(item['visits'] for item in recharges_resp),
-            "Storage": sum(item['visits'] for item in storages_resp)
-        }
-        
-        fig2, ax2 = plt.subplots()
-        ax2.bar(data.keys(), data.values(), color=['green', 'blue', 'orange'])
-        ax2.set_ylabel('Total Visits')
-        ax2.set_title('Total Visits by Node Role')
-        st.pyplot(fig2)
-    except requests.exceptions.ConnectionError:
-        st.error("API connection failed. Ensure the server is running correctly.")
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
-
-# --- Función principal que construye el dashboard ---
-def main_dashboard(simulation: Simulation):
-    st.set_page_config(page_title="Drone Logistics Simulation", layout="wide")
-    st.title("🚁 Drone Logistics Simulation - Correos Chile")
-
-    tabs = ["Run Simulation", "Explore Network", "Clients & Orders", "Route Analytics", "General Statistics"]
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(tabs)
-
-    with tab1:
-        show_run_simulation(simulation)
-    with tab2:
-        show_explore_network(simulation)
-    with tab3:
-        show_clients_and_orders(simulation)
-    with tab4:
-        show_route_analytics(simulation)
-    with tab5:
-        show_general_statistics(simulation)
+    # --- Pestaña 4: Analítica de Rutas ---
+    with tabs[3]:
+        st.header("📊 Analítica de Rutas (AVL)")
+        if sim.route_frequency_avl.root:
+            st.subheader("Rutas Frecuentes")
+            st.table(sim.get_frequent_routes())
+            
+            st.subheader("Visualización del Árbol AVL")
+            visualizer = AVLVisualizer(sim.route_frequency_avl)
+            fig = visualizer.plot_tree()
+            if fig: st.pyplot(fig)
+            
+            st.divider()
+            st.subheader("Generar Informe")
+            if st.button("Generar Informe PDF"):
+                pdf_path = generate_pdf_report(sim)
+                if pdf_path:
+                    with open(pdf_path, "rb") as f:
+                        st.download_button("📥 Descargar Informe PDF", f, file_name="informe_simulacion.pdf")
+        else:
+            st.info("No hay rutas completadas para analizar.")
+            
+    # --- Pestaña 5: Estadísticas Generales ---
+    with tabs[4]:
+        st.header("📈 Estadísticas Generales")
+        if sim.graph:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+            
+            # Gráfico de Torta
+            role_counts = sim.get_node_roles_distribution()
+            ax1.pie(role_counts.values(), labels=[k.title() for k in role_counts.keys()], autopct='%1.1f%%', startangle=90)
+            ax1.set_title("Proporción de Nodos por Rol")
+            
+            # Gráfico de Barras
+            visited_clients = sim.get_most_visited_nodes("client")
+            if visited_clients:
+                nodes = [item['node_id'] for item in visited_clients]
+                visits = [item['visits'] for item in visited_clients]
+                ax2.bar(nodes, visits)
+                ax2.set_title("Clientes Más Visitados")
+                plt.setp(ax2.get_xticklabels(), rotation=45, ha="right")
+            else:
+                ax2.text(0.5, 0.5, "Sin entregas.", ha='center')
+                ax2.set_title("Clientes Más Visitados")
+            
+            st.pyplot(fig)
+        else:
+            st.info("No hay datos para las estadísticas.")

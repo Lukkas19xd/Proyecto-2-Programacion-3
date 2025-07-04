@@ -1,36 +1,34 @@
-# api/controllers/client_routes.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from sim.simulation import Simulation
-from ..depedencies import get_simulation
 
-# El router es como un "mini-FastAPI" que podemos incluir en la aplicación principal.
-router = APIRouter(
-    prefix="/clients",  # Todas las rutas en este archivo comenzarán con /clients
-    tags=["Clients"]    # Agrupa estos endpoints en la documentación de la API
-)
+router = APIRouter()
 
-@router.get("/")
-def get_all_clients(sim: Simulation = Depends(get_simulation)):
+# Variable global para mantener la instancia de la simulación
+simulation: Simulation = None
+
+def set_simulation(sim: Simulation):
     """
-    Obtiene la lista completa de clientes registrados en el sistema.
-    Utiliza el método .values() de tu HashMap para obtener todos los clientes.
+    Esta es la función que faltaba.
+    Permite que main.py inyecte la instancia de la simulación.
     """
-    if not sim.clients:
-        raise HTTPException(status_code=404, detail="No hay clientes en la simulación activa.")
+    global simulation
+    simulation = sim
+
+@router.get("/clients/")
+def get_all_clients():
+    """Obtiene la lista completa de clientes registrados."""
+    if not simulation or not simulation.clients:
+        raise HTTPException(status_code=404, detail="No hay clientes o la simulación no está activa.")
+    # Suponiendo que self.clients es un diccionario de objetos Client
+    return [client.to_dict() for client in simulation.clients.values()]
+
+@router.get("/clients/{client_id}")
+def get_client_by_id(client_id: str):
+    """Obtiene la información detallada de un cliente por su ID."""
+    if not simulation or not simulation.clients:
+        raise HTTPException(status_code=404, detail="Simulación no activa.")
     
-    # Convierte cada objeto Cliente a su representación de diccionario
-    client_list = [client.to_dict() for client in sim.clients.values()]
-    return client_list
-
-@router.get("/{client_id}")
-def get_client_by_id(client_id: str, sim: Simulation = Depends(get_simulation)):
-    """
-    Obtiene la información detallada de un cliente específico por su ID.
-    """
-    client = sim.clients.get(client_id)
-    
-    if client is None:
-        # Si el cliente no se encuentra, devuelve un error 404
+    client = simulation.clients.get(client_id)
+    if not client:
         raise HTTPException(status_code=404, detail=f"Cliente con ID '{client_id}' no encontrado.")
-        
     return client.to_dict()

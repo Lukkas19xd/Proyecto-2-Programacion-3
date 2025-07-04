@@ -1,5 +1,4 @@
-# sim/floyd_warshall_finder.py
-import itertools
+import math
 
 class FloydWarshallFinder:
     """
@@ -7,63 +6,72 @@ class FloydWarshallFinder:
     utilizando el algoritmo de Floyd-Warshall.
     """
     def __init__(self, graph):
-        self.nodes = list(graph.vertices.values())
-        self.node_map = {node.id: i for i, node in enumerate(self.nodes)}
-        self.num_nodes = len(self.nodes)
-        
-        # Inicializar matrices de distancia y sucesores
-        self.dist = [[float('inf')] * self.num_nodes for _ in range(self.num_nodes)]
-        self.next_node = [[None] * self.num_nodes for _ in range(self.num_nodes)]
-
-        self._initialize_matrices(graph)
-        self._calculate_all_pairs_shortest_paths()
+        self.graph = graph
+        self.dist = []      # Matriz de distancias
+        self.next_node = [] # Matriz para reconstruir caminos
+        self.node_map = {}  # Mapeo de ID de nodo a índice de matriz
+        if graph:
+            self._initialize_matrices(graph)
+            self._calculate_paths()
 
     def _initialize_matrices(self, graph):
-        """Prepara las matrices con los datos iniciales del grafo."""
-        for i in range(self.num_nodes):
+        """Prepara las matrices de distancia y de siguiente nodo."""
+        nodes = list(graph.vertices.keys())
+        self.node_map = {node_id: i for i, node_id in enumerate(nodes)}
+        n = len(nodes)
+        
+        # Inicializar matrices con infinito y None
+        self.dist = [[math.inf] * n for _ in range(n)]
+        self.next_node = [[None] * n for _ in range(n)]
+
+        # Establecer la distancia de un nodo a sí mismo como 0
+        for i in range(n):
             self.dist[i][i] = 0
 
+        # Poblar las matrices con las aristas existentes
         for edge in graph.edges:
-            u_idx = self.node_map[edge.origin.id]
-            v_idx = self.node_map[edge.destination.id]
+            # **AQUÍ ESTÁ LA CORRECCIÓN FINAL**
+            # Usamos edge.u y edge.v, que son los atributos correctos de la clase Edge
+            u_idx = self.node_map.get(edge.u)
+            v_idx = self.node_map.get(edge.v)
             
-            # Para grafos no dirigidos, la arista va en ambas direcciones
-            self.dist[u_idx][v_idx] = edge.weight
-            self.dist[v_idx][u_idx] = edge.weight
-            self.next_node[u_idx][v_idx] = v_idx
-            self.next_node[v_idx][u_idx] = u_idx
+            if u_idx is not None and v_idx is not None:
+                self.dist[u_idx][v_idx] = edge.weight
+                self.dist[v_idx][u_idx] = edge.weight # Para grafos no dirigidos
+                self.next_node[u_idx][v_idx] = v_idx
+                self.next_node[v_idx][u_idx] = u_idx
 
-    def _calculate_all_pairs_shortest_paths(self):
-        """Ejecuta el algoritmo principal de Floyd-Warshall."""
-        for k, i, j in itertools.product(range(self.num_nodes), repeat=3):
-            # Si encontramos una ruta más corta a través del nodo k...
-            if self.dist[i][j] > self.dist[i][k] + self.dist[k][j]:
-                # ...actualizamos la distancia y el siguiente nodo en la ruta.
-                self.dist[i][j] = self.dist[i][k] + self.dist[k][j]
-                self.next_node[i][j] = self.next_node[i][k]
+    def _calculate_paths(self):
+        """Ejecuta el algoritmo de Floyd-Warshall."""
+        n = len(self.dist)
+        for k in range(n):
+            for i in range(n):
+                for j in range(n):
+                    if self.dist[i][k] + self.dist[k][j] < self.dist[i][j]:
+                        self.dist[i][j] = self.dist[i][k] + self.dist[k][j]
+                        self.next_node[i][j] = self.next_node[i][k]
 
-    def get_path(self, start_id, end_id):
-        """
-        Reconstruye la ruta más corta entre dos nodos usando la matriz de sucesores.
-        """
-        if start_id not in self.node_map or end_id not in self.node_map:
-            return None, float('inf')
+    def get_path(self, start_id: str, end_id: str):
+        """Reconstruye y devuelve la ruta más corta y su costo."""
+        if not self.dist:
+            return None, math.inf
 
-        u_idx = self.node_map[start_id]
-        v_idx = self.node_map[end_id]
+        start_idx = self.node_map.get(start_id)
+        end_idx = self.node_map.get(end_id)
 
-        if self.next_node[u_idx][v_idx] is None:
-            return None, float('inf') # No hay ruta
+        if start_idx is None or end_idx is None or self.dist[start_idx][end_idx] == math.inf:
+            return None, math.inf
 
-        path_indices = [u_idx]
-        current_idx = u_idx
-        while current_idx != v_idx:
-            current_idx = self.next_node[current_idx][v_idx]
-            if current_idx is None: return None, float('inf') # Ruta interrumpida
-            path_indices.append(current_idx)
+        path_indices = []
+        u, v = start_idx, end_idx
+        while u != v:
+            path_indices.append(u)
+            u = self.next_node[u][v]
+            if u is None: return None, math.inf # Ruta no encontrada
+        path_indices.append(v)
         
-        # Convertir los índices de la ruta de vuelta a objetos Vertex
-        path_nodes = [self.nodes[i] for i in path_indices]
-        cost = self.dist[u_idx][v_idx]
+        # Convertir índices de nuevo a IDs de nodos
+        id_map = {i: node_id for node_id, i in self.node_map.items()}
+        path_ids = [self.graph.get_vertex(id_map[i]) for i in path_indices]
         
-        return path_nodes, cost
+        return path_ids, self.dist[start_idx][end_idx]

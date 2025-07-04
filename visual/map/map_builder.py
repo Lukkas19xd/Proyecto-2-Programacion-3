@@ -1,64 +1,47 @@
-# visual/map/map_builder.py
 import folium
 
 class MapBuilder:
     def __init__(self, graph):
         self.graph = graph
+        self.map_center = [-38.7359, -72.5904]
 
-    def build_map(self, highlighted_path=None, mst_edges=None): # <-- Nuevo parámetro
-        # Coordenadas de Temuco para centrar el mapa
-        map_center = [-38.7359, -72.5904]
-        m = folium.Map(location=map_center, zoom_start=13)
-
-        # Colores para cada rol
-        color_map = {"storage": "blue", "recharge": "green", "client": "orange"}
-
-        # Dibujar todas las aristas de la red (líneas grises)
-        for edge in self.graph.edges:
-            start_node = edge.origin
-            end_node = edge.destination
-            folium.PolyLine(
-                locations=[(start_node.lat, start_node.lon), (end_node.lat, end_node.lon)],
-                color="grey",
-                weight=2,
-                opacity=0.5,
-                tooltip=f"Costo: {edge.weight}"
-            ).add_to(m)
-
-        # Dibujar las aristas del MST (si se proporcionan)
-        if mst_edges:
-            for edge in mst_edges:
-                start_node = edge.origin
-                end_node = edge.destination
-                folium.PolyLine(
-                    locations=[(start_node.lat, start_node.lon), (end_node.lat, end_node.lon)],
-                    color="#0000FF",  # Azul
-                    weight=3,
-                    opacity=0.9,
-                    dash_array='5, 10', # <-- Línea discontinua
-                    tooltip=f"MST - Costo: {edge.weight}"
-                ).add_to(m)
-
-        # Dibujar la ruta seleccionada (si la hay)
-        if highlighted_path:
-            path_coords = [(node.lat, node.lon) for node in highlighted_path]
-            folium.PolyLine(
-                locations=path_coords,
-                color="#FF0000",  # Rojo
-                weight=4,
-                opacity=0.8,
-                tooltip="Ruta Seleccionada"
-            ).add_to(m)
-        
-        # Dibujar todos los nodos
-        for node in self.graph.vertices.values():
-            folium.CircleMarker(
-                location=[node.lat, node.lon],
-                radius=5,
-                color=color_map.get(node.role, "black"),
-                fill=True,
-                fill_color=color_map.get(node.role, "black"),
-                tooltip=f"ID: {node.id}\nRol: {node.role}"
-            ).add_to(m)
-        
+    def build_map(self, highlight_route=None, mst_edges=None):
+        m = folium.Map(location=self.map_center, zoom_start=13)
+        if not self.graph: return m
+        self._draw_nodes(m)
+        self._draw_edges(m)
+        if highlight_route: self._highlight_route(m, highlight_route)
+        if mst_edges: self._draw_mst(m, mst_edges)
         return m
+
+    def _draw_nodes(self, m):
+        color_map = {"Cliente": "blue", "Almacenamiento": "green", "Recarga": "orange"}
+        for node_id, vertex in self.graph.vertices.items():
+            folium.Marker(
+                location=[vertex.lat, vertex.lon],
+                popup=f"ID: {node_id}<br>Rol: {vertex.role}",
+                icon=folium.Icon(color=color_map.get(vertex.role, "gray"))
+            ).add_to(m)
+
+    def _draw_edges(self, m):
+        """Dibuja las aristas usando los atributos correctos 'u' y 'v'."""
+        for edge in self.graph.edges:
+            # **AQUÍ ESTÁ LA CORRECCIÓN FINAL Y DEFINITIVA**
+            start_node = self.graph.get_vertex(edge.u)
+            end_node = self.graph.get_vertex(edge.v)
+            if start_node and end_node:
+                points = [(start_node.lat, start_node.lon), (end_node.lat, end_node.lon)]
+                folium.PolyLine(points, color='gray', weight=1.5, opacity=0.5).add_to(m)
+
+    def _highlight_route(self, m, route_ids):
+        route_points = [(self.graph.get_vertex(nid).lat, self.graph.get_vertex(nid).lon) for nid in route_ids if self.graph.get_vertex(nid)]
+        if len(route_points) > 1:
+            folium.PolyLine(route_points, color='red', weight=4, opacity=1).add_to(m)
+
+    def _draw_mst(self, m, mst_edges):
+        for u_id, v_id in mst_edges:
+            start_node = self.graph.get_vertex(u_id)
+            end_node = self.graph.get_vertex(v_id)
+            if start_node and end_node:
+                points = [(start_node.lat, start_node.lon), (end_node.lat, end_node.lon)]
+                folium.PolyLine(points, color='purple', weight=3, opacity=0.7, dash_array='5, 5').add_to(m)

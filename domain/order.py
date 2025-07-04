@@ -1,43 +1,49 @@
-# domain/order.py
-import datetime
+import uuid
+from datetime import datetime
 
 class Order:
-    """Modela un pedido o una orden de entrega."""
-    def __init__(self, order_id, client_id, origin, destination):
-        self.order_id = order_id
-        self.client_id = client_id
+    """
+    Representa un pedido en el sistema.
+    """
+    def __init__(self, client, origin: str, destination: str, priority: str = "Normal"):
+        """
+        Constructor de la orden.
+        
+        Args:
+            client (Client): El objeto cliente que realiza la orden.
+            origin (str): El ID del nodo de origen (almacenamiento).
+            destination (str): El ID del nodo de destino (cliente).
+            priority (str): La prioridad del pedido.
+        """
+        self.order_id = str(uuid.uuid4())
+        # Aquí se usa el objeto client para obtener sus datos
+        self.client_id = client.id
+        self.client_name = client.name
         self.origin = origin
         self.destination = destination
-        self.status = "Pending"  # Estados: Pending, Delivered, Cancelled
-        self.creation_date = datetime.datetime.now()
+        self.status = "Pending"
+        self.creation_date = datetime.now()
         self.delivery_date = None
-        self.cost = 0.0
+        self.total_cost = 0
+        self.priority = priority
 
-    def deliver(self, cost):
-        """Marca la orden como entregada y registra el costo y la fecha."""
-        if self.status == "Pending":
-            self.status = "Delivered"
-            self.delivery_date = datetime.datetime.now()
-            self.cost = cost
-            return True
-        return False
-
-    def cancel(self):
-        """Marca la orden como cancelada."""
-        if self.status == "Pending":
-            self.status = "Cancelled"
-            return True
-        return False
+    def complete_order(self, cost: float):
+        """Marca la orden como completada."""
+        self.status = "Completed"
+        self.delivery_date = datetime.now()
+        self.total_cost = cost
 
     def to_dict(self):
-        """Convierte los datos de la orden a un diccionario para visualización."""
+        """Convierte el objeto a un diccionario para visualización."""
         return {
-            "ID Orden": self.order_id,
-            "ID Cliente": self.client_id,
-            "Origen": self.origin,
-            "Destino": self.destination,
-            "Status": self.status,
-            "Fecha Creación": self.creation_date.strftime("%Y-%m-%d %H:%M"),
-            "Fecha Entrega": self.delivery_date.strftime("%Y-%m-%d %H:%M") if self.delivery_date else "N/A",
-            "Costo Total": f"{self.cost:.2f}"
+            "order_id": self.order_id,
+            "client_id": self.client_id,
+            "client_name": self.client_name,
+            "origin": self.origin,
+            "destination": self.destination,
+            "status": self.status,
+            "creation_date": self.creation_date.isoformat(),
+            "delivery_date": self.delivery_date.isoformat() if self.delivery_date else "N/A",
+            "priority": self.priority,
+            "total_cost": f"{self.total_cost:.2f}"
         }
