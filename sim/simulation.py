@@ -11,6 +11,7 @@ from streamlit_folium import st_folium
 from sim.mst_finder import MSTFinder
 from sim.pathfinder import Pathfinder # Dijkstra
 from sim.floyd_warshall_finder import FloydWarshallFinder # Floyd-Warshall
+from visual.report_generator import generate_report # <-- Importante para el botón
 
 from sim.simulation_initializer import SimulationInitializer
 from domain.client import Client
@@ -21,7 +22,7 @@ from visual.avl_visualizer import AVLVisualizer
 
 class Simulation:
     def __init__(self):
-        # Inicialización de variables de estado
+        # ... (El método __init__ se mantiene igual)
         self.graph = None
         self.fw_finder = None
         self.initializer = SimulationInitializer()
@@ -29,7 +30,6 @@ class Simulation:
         self.orders = HashMap()
         self.avl = AVLTree()
         self.order_counter = 1
-        # Limpiar estados de sesión al iniciar
         for key in ['path_to_highlight', 'show_mst', 'mst_edges']:
             if key in st.session_state:
                 del st.session_state[key]
@@ -44,6 +44,7 @@ class Simulation:
         with tabs[3]: self._route_analytics_tab()
         with tabs[4]: self._general_statistics_tab()
 
+    # (Los métodos _run_simulation_tab, _explore_network_tab y _clients_orders_tab se mantienen igual)
     def _run_simulation_tab(self):
         st.header("🔧 Configuración de la Simulación")
         n_nodes = st.slider("Número de Nodos", 10, 150, 15, key="n_nodes")
@@ -85,11 +86,7 @@ class Simulation:
 
         with col2:
             st.subheader("Procesar Órdenes")
-            algorithm = st.radio(
-                "Seleccione el algoritmo de búsqueda:",
-                ('Dijkstra (En tiempo real)', 'Floyd-Warshall (Pre-calculado)'),
-                key='algo_selector'
-            )
+            algorithm = st.radio("Seleccione el algoritmo de búsqueda:", ('Dijkstra (En tiempo real)', 'Floyd-Warshall (Pre-calculado)'), key='algo_selector')
             pending_orders = {f"Orden #{o.order_id} ({o.origin} -> {o.destination})": o for o in self.orders.values() if o.status == 'Pending'}
 
             if pending_orders:
@@ -118,21 +115,18 @@ class Simulation:
 
     def _process_delivery(self, order, algorithm):
         path, cost = None, float('inf')
-        
         with st.spinner(f"Calculando ruta con {algorithm.replace('_', ' ').title()}..."):
             if algorithm == "dijkstra":
                 pathfinder = Pathfinder(self.graph)
                 path, cost = pathfinder.find_path(order.origin, order.destination)
             elif algorithm == "floyd_warshall":
                 path, cost = self.fw_finder.get_path(order.origin, order.destination)
-        
         if path:
             order.deliver(cost)
             client_obj = self.clients.get(order.client_id)
             if client_obj: client_obj.increment_orders()
             self.avl.add_route(path)
             st.session_state.path_to_highlight = path
-            
             st.success(f"¡Entrega completada! Costo total: {cost:.2f}")
             st.info(f"Ruta: {' → '.join([v.id for v in path])}")
             time.sleep(2); st.rerun()
@@ -144,7 +138,6 @@ class Simulation:
         if not self.clients.values() and not self.orders.values():
             st.warning("No hay datos para mostrar. Por favor, inicie una simulación.")
             return
-
         st.subheader("Clientes Registrados")
         st.json([c.to_dict() for c in self.clients.values()])
         st.subheader("Historial de Órdenes")
@@ -152,14 +145,12 @@ class Simulation:
 
     def _route_analytics_tab(self):
         st.header("📊 Analítica de Rutas (Árbol AVL)")
-        # --- CÓDIGO CORREGIDO Y ORGANIZADO ---
         if not self.avl.root:
             st.info("Aún no se han completado rutas para poder analizar.")
             return
         
         st.subheader("Rutas Más Frecuentes")
-        frequent_routes = self.avl.get_frequent_routes()
-        st.table(frequent_routes)
+        st.table(self.avl.get_frequent_routes())
         
         st.subheader("Visualización del Árbol AVL de Rutas")
         with st.spinner("Generando visualización del árbol..."):
@@ -167,30 +158,49 @@ class Simulation:
             visualizer.build_graph(self.avl.root)
             fig = visualizer.draw()
             if fig:
-                # Pasamos la figura directamente a st.pyplot para evitar la advertencia
                 st.pyplot(fig)
             else:
                 st.warning("No se pudo generar la visualización del árbol.")
 
+        st.divider() # Añadimos un separador visual
+        
+        # --- CÓDIGO AÑADIDO PARA EL BOTÓN DE DESCARGA ---
+        st.subheader("Descargar Informe PDF")
+        
+        # Recolectar datos para el informe (igual que en la API)
+        delivered_orders = [o for o in self.orders.values() if o.status == 'Delivered']
+        simulation_data = {
+            'frequent_routes': self.avl.get_frequent_routes(),
+            'clients': sorted([c.to_dict() for c in self.clients.values()], key=lambda x: x['Total Pedidos'], reverse=True),
+            'orders': [o.to_dict() for o in self.orders.values()],
+            'role_counts': Counter(v.role for v in self.graph.vertices.values()) if self.graph else Counter(),
+            'destination_counts': Counter(o.destination for o in delivered_orders) if delivered_orders else None
+        }
+        
+        # Generar el PDF en memoria
+        pdf_bytes = generate_report(simulation_data)
+        
+        # Crear el botón de descarga
+        st.download_button(
+            label="📥 Descargar Informe PDF",
+            data=pdf_bytes,
+            file_name="informe_simulacion.pdf",
+            mime="application/pdf"
+        )
+        # --- FIN DEL CÓDIGO AÑADIDO ---
+
     def _general_statistics_tab(self):
         st.header("📈 Estadísticas Generales de la Simulación")
-        # --- CÓDIGO CORREGIDO Y ORGANIZADO ---
-
-        # 1. Añadimos un chequeo para evitar el error si la simulación no ha iniciado
         if not self.graph:
             st.warning("Primero debe iniciar una simulación.")
             return
         
-        # 2. Creamos la figura y los ejes
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-
-        # 3. Gráfico de Torta: Proporción de Nodos por Rol
         role_counts = Counter(v.role for v in self.graph.vertices.values())
         ax1.pie(role_counts.values(), labels=role_counts.keys(), autopct='%1.1f%%', startangle=90, colors=['skyblue', 'lightgreen', 'sandybrown'])
         ax1.set_title("Proporción de Nodos por Rol")
         ax1.axis('equal')
         
-        # 4. Gráfico de Barras: Nodos de Destino Más Visitados
         delivered_destinations = [o.destination for o in self.orders.values() if o.status == 'Delivered']
         if delivered_destinations:
             dest_counts = Counter(delivered_destinations)
@@ -204,8 +214,6 @@ class Simulation:
         else:
             ax2.text(0.5, 0.5, "Aún no hay entregas completadas.", ha='center', va='center')
             ax2.set_title("Nodos de Destino Más Visitados")
-            ax2.set_xticks([])
-            ax2.set_yticks([])
+            ax2.set_xticks([]); ax2.set_yticks([])
 
-        # 5. Mostramos la figura en Streamlit de la forma recomendada
         st.pyplot(fig)
