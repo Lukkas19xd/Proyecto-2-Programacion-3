@@ -7,11 +7,11 @@ class Graph:
         self.vertices = {}  # Acceso rápido a vértices por ID
         self.edges = set()
 
-    def add_vertex(self, id, role):
-        """Añade un vértice al grafo si no existe."""
-        if id not in self.vertices:
-            self.vertices[id] = Vertex(id, role)
-        return self.vertices[id]
+    def add_vertex(self, id, role, lat=0.0, lon=0.0): # <--- Modificar esta línea
+            """Añade un vértice al grafo si no existe."""
+            if id not in self.vertices:
+                self.vertices[id] = Vertex(id, role, lat, lon) # <--- Modificar esta línea
+            return self.vertices[id]
 
     def get_vertex(self, id):
         """Obtiene un vértice por su ID."""

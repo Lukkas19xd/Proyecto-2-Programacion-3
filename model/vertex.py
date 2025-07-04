@@ -1,9 +1,12 @@
+# model/vertex.py
 class Vertex:
     """Representa un nodo en el grafo (cliente, almacén o estación)."""
-    def __init__(self, id, role):
+    def __init__(self, id, role, lat=0.0, lon=0.0):
         self.id = id
         self.role = role
         self.neighbors = {}  # Clave: objeto Vertex del vecino, Valor: peso de la arista
+        self.lat = lat
+        self.lon = lon
 
     def add_neighbor(self, neighbor, weight):
         """Añade un vecino a este vértice."""
